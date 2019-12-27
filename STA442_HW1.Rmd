@@ -1,0 +1,173 @@
+---
+title: "STA442_HW1"
+author: "Zeyang Zhang"
+date: "2019/9/21"
+output: pdf_document
+geometry: tmargin=1.8cm,bmargin=1.8cm,lmargin=2.1cm,rmargin=2.1cm
+---
+## The Effect of Sexual Activity to Fruitfly Longevity
+
+### Introduction
+We want to investigate the relationship between the sexual activity and the lifetime of fruitflies.
+From the experiment data,we have 125 fruit flies divided randomly into five groups of 25 each: first group "isolitary" was kept solitary,second group "one" was kept individually with 1 pregnant female each day,third group "low" was kept individually with 1 virgin female each day,fourth group "many" was kept individually with 1 pregnant female each day(there is one missing data in this group), and fifth group "high" was given 8 virgin females per day. Pregnant fruit flies will not mate, so it is an additional control. It is known that to thorax length of each male fruitfly will affect its lifetime, so we measured and added it into our model.
+
+### Analysis methods and coefficients interpretion
+The QQ plot (Fig 1, see appendix) indicate longevity is not normally distributed. Also, we note that the longevity should be a positive and continuous number. Thus we should use Gamma rather than Possion GLM. Histagram and density curve (Fig 2, see appendix) below shows the density curve is right-skewness, which is more close to a Gamma distribution. We consider fitting the Gamma GLM with 'log' link function to make coefficients interpretable under 95% Confidence Interval. 
+```{r, echo=FALSE}
+data('fruitfly', package='faraway') 
+m1 <- glm(longevity ~ thorax + activity, family=Gamma(link = 'log'), data=fruitfly)
+knitr::kable(summary(m1)$coef, digits=3, caption ="95% Confidence Interval coeffient Table for fruitfly sexual activity model", align = 'l')
+```
+
+Table 1 above gives us the details of each coefficient. Except 'Intercept' and 'thorax','activitylow' and 'activityhigh' are signficant under significance level $\alpha=0.05$. It suffices to show that furitflies whose sexual activity are low or high have different longevity comparing to isolated fuirtflies while other groups are not signficantly different.
+The final GLM model is:
+$$
+\begin{aligned}
+log(\mu) = 1.88722 + 2.68778 \times X_{thorax} -0.11646 \times \mathbb{I}_{low} -0.41466 \times \mathbb{I}_{high}
+\end{aligned}
+$$ 
+Accoring to Table1, we generate Table2 under the 95% confidential interval, which gives us the upper and lower bound of ratio changes of each varibale according to:
+$$
+\mu = {\rm e}^{1.88722 + 2.68778 \times X_{thorax} -0.11646 \times \mathbb{I}_{low} -0.41466 \times \mathbb{I}_{high}}
+$$
+
+```{r, echo=FALSE}
+FruitflyTable = as.data.frame(summary(m1)$coef)
+FruitflyTable$Lower = FruitflyTable$Estimate - 2*FruitflyTable$'Std. Error'
+FruitflyTable$Upper = FruitflyTable$Estimate + 2*FruitflyTable$'Std. Error'
+Ratio = exp(FruitflyTable[,c('Estimate','Lower','Upper')])
+knitr::kable(Ratio[c(4,6),], digits=3,caption = 'How much longevity propotionally changed for fruitflies whose sex activity low and high under 95% Confidence Interval',align = 'l')
+```
+
+We can see the longevity decreases proportionally if type is low or high. Comparing to isolated group, the longevity of group low decreases 1.0% ~ 20.0% and the longevity of group high decrease 26.4% ~ 40.7%.
+
+## Summary of the Fruitfly Results
+In conclusion, we found statistical evidence about association between sexual activity and reduced lifespan of male fruitflies. After reducing the effects of different thorax length, longevity is still very different between isolated male fruitflies and male fruitflies with low and high sexual activities. More sexual activities are related to shorter longevity of male fruitflies, which might indicate significant physiological cost of male sexual activity.
+
+## Summary of the Somkimng Research Results
+
+Based on the data from 2014 American National Youth Tobacco Survey, we investigated two research hypotheses and made the following conclusions: First, comapring with Hispanic-Americans and African-Americans, regular usage of chewing tobacco(including snuff or dip) is much more common for Americans of European. Second, the likelihood of having used a hookah or waterpipe is the same for man and woman if their age and ethnicity are similar.
+
+##  Isuues of Tobacco Usage among American School Children
+
+### Introduction
+
+We use the 2014 American National Youth Tobacco Survey to analyze two problems amongst American school children. The first research problem we will investigate is whether regular use of chewing tobacco, snuff or dip is more common amongst Americans of European ancestry than for Hispanic-Americans and African-Americans. The second one is whether the likelihood of having used a hookah or waterpipe on at least one occasion is the same for two individuals of the different sexes when their age, ethnicity, and other demographic characteristics are similar.
+
+### Statistical analysis
+
+In the **FIRST** problem, "chewing_tobacco_snuff_or" is a binary variable. So naturally a binomial GLM should be considered. Also, in order to except the influence of other factor, we include the age and whether living in rural area in our model since white Americans more likely to live in rural areas and chewing tobacco is a rural phenomenon.  
+
+```{r, echo = FALSE}
+load('/Users/65421/R/STA442/smoke.RData')
+```
+
+```{r, echo=FALSE}
+smokeSub = smoke[smoke$Age > 9 & !is.na(smoke$Race) &
+                 !is.na(smoke$chewing_tobacco_snuff_or)&
+                   !is.na(smoke$RuralUrban), ]
+sm1<- glm(chewing_tobacco_snuff_or ~ RuralUrban + Race + Age, family=binomial, data=smokeSub)
+knitr::kable(summary(sm1)$coef, digits=3, caption ="95% Confidence Interval coeffient Table for chewing tobacco and race model", align = 'l')
+```
+
+Accroding to Table 3, under significance level $\alpha=0.05$, the model can be writtin as 
+$$
+\begin{aligned}
+log(\frac{\pi}{1-\pi}) = -8.794 
++0.931 \times \mathbb{I}_{Rural} 
+-1.559 \times \mathbb{I}_{Black}	
+-0.721 \times \mathbb{I}_{Hispanic} 
+-1.590 \times \mathbb{I}_{Asian} 
++1.158 \times \mathbb{I}_{Pacific} 
++0.349 \times \mathbb{X}_{Age}
+\end{aligned}
+$$  
+  
+
+In the **SECOND** problem, "ever_tobacco_hookah_or_wa" is a binary variable. Similarily, a binomial GLM should be considered. Also, we include the age and race as additional influential factor in our model, so the influence of factor sex can be estimated more accurately.
+
+We hope to fit a model like:
+$$
+\begin{aligned}
+log(\frac{\pi}{1-\pi}) = 	\beta_{0} 
++\beta_{Sex} \times \mathbb{I}_{Sex} 
++\beta_{Black} \times \mathbb{I}_{Black}	
++\beta_{Hispanic} \times \mathbb{I}_{Hispanic} 
++\beta_{Asian} \times \mathbb{I}_{Asian} 
++\beta_{Pacific} \times \mathbb{I}_{Pacific} 
++\beta_{Age} \times \mathbb{X}_{Age}
+\end{aligned}
+$$
+
+```{r, echo=FALSE}
+smokeSub = smoke[smoke$Age > 9 & !is.na(smoke$Race) &
+                   !is.na(smoke$ever_tobacco_hookah_or_wa)&
+                   !is.na(smoke$Sex), ]
+sm2<- glm(ever_tobacco_hookah_or_wa ~ Sex + Race + Age, family=binomial, data=smokeSub)
+knitr::kable(summary(sm2)$coef, digits=3, caption ="95% Confidence Interval coeffient Table for hookah and sex model", align = 'l')
+```
+
+However, according to Table 4, under significance level $\alpha=0.05$, $\beta_{Sex}$is not significantly different from 0, so it indicates the likelihood of having used a hookah or waterpipe on at least one occasion is the same for two individuals of the different sexes (when their age, ethnicity, and other demographic characteristics are similar).
+
+### Results
+
+```{r, echo=FALSE}
+SomkeTable = as.data.frame(summary(sm1)$coef)
+SomkeTable$Lower = SomkeTable$Estimate - 2*SomkeTable$'Std. Error'
+SomkeTable$Upper = SomkeTable$Estimate + 2*SomkeTable$'Std. Error'
+OddRatio = exp(SomkeTable[,c('Estimate','Lower','Upper')])
+knitr::kable(OddRatio[c(3,4),], digits=3,caption = 'How much propotionally changed in the odd ratio of chewing tobacco, snuff or dip for Hispanic-Americans and African-Americans comapring to white Americans',align = 'l')
+
+```
+
+- **First**, from Table 5, we can see the odds ratio of chewing tobacco, snuff or dip decreases proportionally if the individual is Hispanic-Americans or African-Americans. Comparing to Americans of European ancestry, the odds ratio of chewing tobacco, snuff or dip decreases 70.5% ~ 85.0% for African-Americans and 40.4% ~ 60.3% for Hispanic-Americans.
+
+- **Second**, as stated in the statistical analysis above, we can not reject the null hypothesis that the likelihood of having used a hookah or waterpipe on at least one occasion is the same for two individuals of the different sexes.
+
+
+## Appedix
+```{r}
+# Q1
+data('fruitfly', package='faraway') 
+summary(fruitfly)
+qqnorm(fruitfly$longevity, main='Fig 1: QQ plot of Fruitflies Longevity')
+qqline(fruitfly$longevity)
+
+fruitfly$tho = fruitfly$thorax - 0.73
+m3 = glm(longevity ~ tho + activity, family = Gamma(link = 'log'), data = fruitfly)
+shape = 1/summary(m3)$dispersion
+scale = exp(m3$coef["(Intercept)"]) / shape
+hist(fruitfly$longevity, prob = T, main = " ", xlab = " "
+, ylab = " ", breaks = 15, ylim = c(0, 0.05), cex.axis = 0.7)
+title(main = "Figure 2: Histogram of Fruitflies Longevity", cex.main = 0.8, line = 0.5)
+title(xlab="Longevity", ylab="Density", line=2, cex.lab=0.8)
+xSeq = seq(15,100,length = 1000)
+lines(xSeq, dgamma(xSeq, shape = shape, scale = scale), col = "red")
+m1 <- glm(longevity ~ thorax + activity, family=Gamma(link = 'log'), data=fruitfly)
+knitr::kable(summary(m1)$coef, digits=3)
+FruitflyTable = as.data.frame(summary(m1)$coef)
+FruitflyTable$Lower = FruitflyTable$Estimate - 2*FruitflyTable$'Std. Error'
+FruitflyTable$Upper = FruitflyTable$Estimate + 2*FruitflyTable$'Std. Error'
+Ratio = exp(FruitflyTable[,c('Estimate','Lower','Upper')])
+knitr::kable(Ratio, digits=3)
+
+# Q2
+load('/Users/65421/R/STA442/smoke.RData')
+smokeSub = smoke[smoke$Age > 9 & !is.na(smoke$Race) &
+                 !is.na(smoke$chewing_tobacco_snuff_or)&
+                   !is.na(smoke$RuralUrban), ]
+sm1<- glm(chewing_tobacco_snuff_or ~ RuralUrban + Race + Age, family=binomial, data=smokeSub)
+knitr::kable(summary(sm1)$coef, digits=3, align = 'l')
+smokeSub = smoke[smoke$Age > 9 & !is.na(smoke$Race) &
+                   !is.na(smoke$ever_tobacco_hookah_or_wa)&
+                   !is.na(smoke$Sex), ]
+sm2<- glm(ever_tobacco_hookah_or_wa ~ Sex + Race + Age, family=binomial, data=smokeSub)
+knitr::kable(summary(sm2)$coef, digits=3, align = 'l')
+SomkeTable = as.data.frame(summary(sm1)$coef)
+SomkeTable$Lower = SomkeTable$Estimate - 2*SomkeTable$'Std. Error'
+SomkeTable$Upper = SomkeTable$Estimate + 2*SomkeTable$'Std. Error'
+OddRatio = exp(SomkeTable[,c('Estimate','Lower','Upper')])
+knitr::kable(OddRatio, digits=3,align = 'l')
+
+```
+
