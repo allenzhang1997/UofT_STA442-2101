@@ -1,0 +1,284 @@
+---
+title: "STA442_HW4"
+author: "Zeyang Zhang"
+date: "29/11/2019"
+output: pdf_document
+geometry: tmargin=1.8cm,bmargin=1.8cm,lmargin=2.1cm,rmargin=2.1cm
+---
+
+# Smoking Report
+
+## Introduction
+
+The data set is from the 2014 American National Youth Tobacco Survey. From the description, we can say that is likely that significant variation amongst the US states exists, and that there is variation from one school to the next. There are two hypotheses to be investigated:
+
+- 1. Geographic variation (between states) in the mean age children first try cigarettes is substantially
+greater than variation amongst schools. 
+
+- 2. First cigarette smoking has a flat hazard function, or in other words is a first order Markov process. Two non-smoking children have the same probability of trying cigarettes within the next month.
+
+## Method
+
+First we convert the original time data into the decade scale, from 0.4(age 8 or already a smoker at age 8) to 1.5(individual at age 19) and use left censoring to encode the event into 3 category: 1,observed event, the individual is a smoker; 0,right censored event, the individual is not a smoker when he response to the survey; 2,left censored event, the individual is a smoker before 8 years old. Based on the hypothesis and the following prior information provided by collaborating scientists:
+
+-  The variability in the rate of smoking initiation between states substantial, with some states having double or triple the rate of smoking update compared other states for comparable individuals. Set $U_i$ as the random effect for state $i$, we might see exp($U_i$) = 2 or 3 but unlikely to see at 10.
+
+- Within a given state, the ‘worst’ schools are expected to have at most 50% greater rate than the ‘healthiest’ schools or exp($V_{ij}$) = 1.5 for a school-level random effect is about the largest we’d see.
+
+- A flat hazard function is expected, so the prior on the Weibull shape parameter should allow for a 1 but it is not believed that shape parameter is 4 or 5.
+
+The model should be written as ;
+$$
+\begin{aligned}
+&f(y;\lambda, \alpha)= \alpha y^{\alpha-1}\lambda^{\alpha}e^{-(\lambda y)^{\alpha}}\\
+&Y_{ijk} \sim f(y;\lambda, \alpha)\\
+& \lambda_{ijk} =e^{-\eta_{ijk}}\\
+& \eta_{ijk}= \beta_{0} + \boldsymbol{B}\boldsymbol{X}_{ijk} + U_{i} +U_{ij}\\
+&U_{i}\stackrel{ind}{\sim}N(0,\sigma_{1}^{2})\\
+&U_{ij}\stackrel{ind}{\sim}N(0,\sigma_{2}^{2})\\
+\end{aligned}
+$$
+
+$f(y;\lambda, \alpha)$ is the Weibull distribution defined in INLA with scale parameter $\lambda$ and shape parameter $\alpha$.
+
+$Y_{ijk}$ is the surv.inla data for the **k**th individual from **i**th state **j**th school.
+
+$\eta_{ijk}$ is the linear function for the **k**th individual from **i**th state **j**th school.
+
+$\beta_{0}$ is the intercept of the model
+
+$\boldsymbol{B}$ is the vector of the posterior means.
+
+$\boldsymbol{X}_{ijk}$ is a vector that includes RuralUrban  GENDER, RACE infomation of the **k**th individual from **i**th state **j**th school.
+
+$U_{i}$ is the random effect of **i**th state.
+
+$U_{ij}$ is the random effect of **j**th school in **i**th state.
+
+Prior:
+
+- P($\sigma_{1}>$ log(3)/2)= 0.05, this makes $2\sigma_{1} \leq log(3)$ under 95% CI. Then $exp(U_i)=3$ can be the maximum we can expected. It corresponds with the prior information that the variability in the rate of smoking initiation between states substantial, with some states having double or triple the rate of smoking update compared other states for comparable individuals. 
+
+- P($\sigma_{2}>$ log(1.5)/2)= 0.005, this makes $2\sigma_{2} \leq log(1.5)$ under 99.5% CI. Then $exp(U_{ij})=1.5$ can be the largest we can expected. It corresponds with the prior information that within a given state, the ‘worst’ schools are expected to have at most 50% greater rate than the 'healthiest' school.
+
+- The prior gives the expectation of the shape parameter is 1, with precision $(0.7)^{-2}$. This is calculated with $qlnorm(0.99,log(1),0.7)>5$. When $\sigma=0.7$, over 99% chance that the shape parameter can be less than 5. It corresponds with the prior information that the prior on the Weibull shape parameter should allow for a 1 but it is not believed that shape parameter is 4 or 5.
+
+## Result
+
+The Summary of model coefficients (after exponential) in the model is given below. We can say that the model gives relatively precise result: most parameter 95% CI do not contain 1 and are significant. Higher exp(coef) gives lower $\lambda$ (scale parameter) and the first time smoker age become smaller for that group, although the influence of each coefficient is not linear.
+
+```{r, warning=FALSE, message=FALSE,echo=FALSE}
+# Smoke Report
+smokeFile = Pmisc::downloadIfOld("http://pbrown.ca/teaching/appliedstats/data/smoke.RData")
+load(smokeFile) 
+smoke = smoke[smoke$Age > 9, ]
+forInla = smoke[, c("Age", "Age_first_tried_cigt_smkg", "Sex", "Race", "state", "school", "RuralUrban")] 
+forInla = na.omit(forInla)
+forInla$school = factor(forInla$school) 
+library("INLA")
+
+forSurv = data.frame(time = (pmin(forInla$Age_first_tried_cigt_smkg, forInla$Age) - 4)/10,
+                     event = forInla$Age_first_tried_cigt_smkg <= forInla$Age)
+# left censoring 
+forSurv[forInla$Age_first_tried_cigt_smkg == 8, "event"] = 2 
+smokeResponse = inla.surv(forSurv$time, forSurv$event)
+
+fitS2 = inla(smokeResponse ~ RuralUrban + Sex + Race +
+      f(school, model = "iid", hyper = list(prec = list(prior = "pc.prec",param = c(log(1.5)/2, 0.005)))) +
+      f(state, model = "iid",hyper = list(prec = list(prior = "pc.prec", param = c(log(3)/2, 0.05)))),
+      control.family = list(variant = 1,hyper = list(alpha = list(prior = "normal", param = c(log(1), (0.7)^(-2))))),
+      control.mode = list(theta = c(8, 2, 5), restart = TRUE), data = forInla, family = "weibullsurv", verbose = TRUE)
+knitr::kable(rbind(exp(fitS2$summary.fixed[, c("mean", "0.025quant", "0.975quant")])), digits=3, 
+  caption = "Summary of exponential coefficients in the model",)
+```
+
+The three graphs of prior and posterior densities of model parameters. The first is for shape parameter alpha, the mean is around 3. The second is standard deviation for random effect school, the mean is around 0.15. The third is standard deviation for random effect state, the mean is around 0.06. This result is also shown in other tables.
+
+```{r,warning=FALSE, message=FALSE,echo=FALSE, fig.width=2.5, fig.height=4,fig.cap='Prior and posterior densities of model parameters'}
+fitS2$priorPost = Pmisc::priorPost(fitS2)
+for (Dparam in fitS2$priorPost$parameters) { 
+  do.call(matplot, fitS2$priorPost[[Dparam]]$matplot)
+  do.call(legend, fitS2$priorPost$legend)
+}
+```
+
+- The first hypothesis is wrong. The Geographic variation (between states) in the mean age children first try cigarettes is less than variation amongst schools. It can be seen from the table below and the postprior density plot above.
+
+```{r,warning=FALSE, message=FALSE,echo=FALSE}
+knitr::kable(Pmisc::priorPostSd(fitS2)$summary[, c("mean", "0.025quant", "0.975quant")], digits=3, caption = "Summary of random effect in the model",)
+```
+
+- The second hypothesis is also wrong. First cigarette smoking does not have a flat hazard function because the postprior density plot above gives the shape parameter should be around 3. Two non-smoking children have the increasing probability of trying cigarettes within the next month as he gets older.  An example of hazard function and age frequency (for intercept group) is given below, we can see the hazards function is not flat when the shape is larger than 1.
+
+```{r,warning=FALSE, message=FALSE,echo=FALSE, fig.width=4, fig.height=4}
+xSeq=seq(4,40,len=1000)
+hist(forInla$Age_first_tried_cigt_smkg, main='Hazard density plot and age frequency', 
+     xlim=c(0,40), xlab='age', ylab='hazard density', prob=TRUE)
+kappa=fitS2$summary.hyperpar['alpha','mode']
+lambda=exp(-fitS2$summary.fixed['(Intercept)','mode'])
+lines(xSeq, dweibull((xSeq-4)/10, shape = kappa, scale = lambda)/10, col='red')
+```
+
+## Discussion
+
+We fit the model based on the prior assumptions and the hypothesis. The two hypotheses are both wrong so the model might not be perfect. However, the model itself can reject the hypothesis and that should be enough.
+
+\pagebreak
+
+# Report about the Death on the roads 
+
+## Introduction
+
+The dataset is a subset of the data from all of the road traffic accidents in the UK from 1979 to 2015. The data consist of all pedestrians involved in motor vehicle accidents with either fatal or slight injuries. The goal is to investigate whether women tend to be, on average, safer as pedestrians than men, particularly as teenagers and in early adulthood.
+
+## Method
+
+First, we notice men are involved in accidents more than women. This might be due in part to women being more reluctant than men to walk outdoors late at night or in poor weather, and could also reflect men being on average more likely to engage in risky behaviour than women.
+
+We treat fatal accidents as cases and slight injuries as controls, and use a conditional logistic regression with strata adjust for time of day, lighting conditions, and weather. For each case i we have similar controls from 1 to n. The model we fit can be written as:
+
+$$
+\begin{aligned}
+&logit[Pr(Y_{ij}= 1)]= \alpha_{i}+ X_{ij}\beta\\
+&logit[Pr(Y_{ij}= 1)|Z_{ij}=1]= \alpha_{i}^{*}+X_{ij}\beta\\
+&\alpha_{i}^{*}=\alpha_{i}+log[\frac{pr(Z_{ij}=1|Y_{ij}=1)}{pr(Z_{ij}=1|Y_{ij}=0)}]\\
+\end{aligned}
+$$
+
+- $Y_{ij}$ is 1 when the $i$th starta $j$th control is fatal and is 0 when the $i$th starta $j$th control is not fatal.
+
+- $Z_{ij}$ is 1 when the $i$th starta $j$th control is selected into the study and is 0 when the $i$th starta $j$th control is not selected.
+
+- $\alpha_i$ is the intercept of the model.
+
+- $\beta$ is the vector of the parameter.
+
+- $X_{ij}$ is a covariate vector of risk factor that includes gender and age infomation of the $i$th starta $j$th accident.
+
+Note $\alpha_{i}^{*}=\alpha_{i}+log[\frac{pr(Z_{ij}=1|Y_{ij}=1)}{pr(Z_{ij}=1|Y_{ij}=0)}]$ is not known then the estimate of $\alpha$ would be not available. But clogit fucntion from survival package will give us the relative effect of the covariates.
+
+
+## Result
+
+For male, the age 26-35 data is set as the intercept and all other groups are compared with this group. For female, each age strata is compared with the male strata at the same age.
+
+The coefficient table below shows the proportion of accidents which are fatal is lower for women than for men (higher for men than for women). Except for age 0-6, female has significant lower fatal odd ratio at each age. 
+
+```{r, warning=FALSE, message=FALSE, echo= FALSE}
+pedestrainFile = Pmisc::downloadIfOld("http://pbrown.ca/teaching/appliedstats/data/pedestrians.rds") 
+pedestrians = readRDS(pedestrainFile) 
+pedestrians = pedestrians[!is.na(pedestrians$time), ]
+pedestrians$y = pedestrians$Casualty_Severity == "Fatal" 
+pedestrians$timeCat = format(pedestrians$time, "%Y_%b_%a_h%H") 
+pedestrians$strata = paste(pedestrians$Light_Conditions, pedestrians$Weather_Conditions, pedestrians$timeCat)
+
+theTable = table(pedestrians$strata, pedestrians$y) 
+onlyOne = rownames(theTable)[which(theTable[, 1] == 0 | theTable[, 2] == 0)]
+x = pedestrians[!pedestrians$strata %in% onlyOne, ]
+
+library("survival") 
+theClogit = clogit(y ~ age + age:sex + strata(strata), data = x)
+
+theCoef = rbind(as.data.frame(summary(theClogit)$coef),
+                `age 26 - 35` = c(0, 1, 0, NA, NA)) 
+theCoef$sex = c("Male", "Female")[1 + grepl("Female", rownames(theCoef))]
+theCoef$age = as.numeric(gsub("age|Over| - [[:digit:]].*|[:].*", "", rownames(theCoef))) 
+theCoef = theCoef[order(theCoef$sex, theCoef$age), ]
+knitr::kable(theCoef[,c(1,2,3,5)],digits = 3,caption = "Coefficient Table")
+```
+
+The plot below shows how much the fatal odd ratio is for female comparing with male at each age. The ratio 1 is marked in black line. Most of 95% Confidence Interval lies below that line, which means the fatal accident odd ratio is lower for women than men. The plot illustrates that women are safer as pedestrians than men, especially as teenagers and in early adulthood. Then the hypothesis is correct.
+
+```{r, warning=FALSE, message=FALSE, echo= FALSE, fig.cap="95% Confidence Interval of the fatal accident odd ratio for female comparing with male"}
+matplot(theCoef[theCoef$sex == "Female", "age"],
+        exp(as.matrix(theCoef[theCoef$sex == "Female",
+        c("coef", "se(coef)")]) %*% Pmisc::ciMat(0.99)),
+        log = "y", type = "l", col = "red",
+        lty = c(1, 2, 2), xaxs = "i",
+        xlab="age",ylab="exp(coef)")
+abline(h=1, col="black")
+```
+
+## Discussion
+
+The model treats fatal accidents as cases and slight injuries as controls so the the conclusion should better mention that women tend to be safer as pedestrians than men when they are invloved in accidents on roads. Since we do not have other data set. This is the best conclusion we can get.
+
+\pagebreak
+
+# Appendix
+
+```{r, warning=FALSE, message=FALSE}
+# Smoke Report
+smokeFile = Pmisc::downloadIfOld("http://pbrown.ca/teaching/appliedstats/data/smoke.RData")
+load(smokeFile) 
+smoke = smoke[smoke$Age > 9, ]
+forInla = smoke[, c("Age", "Age_first_tried_cigt_smkg", "Sex", "Race", "state", "school", "RuralUrban")] 
+forInla = na.omit(forInla)
+forInla$school = factor(forInla$school) 
+library("INLA")
+
+forSurv = data.frame(time = (pmin(forInla$Age_first_tried_cigt_smkg, forInla$Age) - 4)/10,
+                     event = forInla$Age_first_tried_cigt_smkg <= forInla$Age)
+# left censoring 
+forSurv[forInla$Age_first_tried_cigt_smkg == 8, "event"] = 2 
+smokeResponse = inla.surv(forSurv$time, forSurv$event)
+
+fitS2 = inla(smokeResponse ~ RuralUrban + Sex + Race +
+f(school, model = "iid", hyper = list(prec = list(prior = "pc.prec",param = c(log(1.5)/2, 0.005)))) +
+f(state, model = "iid",hyper = list(prec = list(prior = "pc.prec", param = c(log(3)/2, 0.05)))),
+control.family = list(variant = 1,hyper = list(alpha = list(prior = "normal", param = c(log(1), (0.7)^(-2))))),
+control.mode = list(theta = c(8, 2, 5), restart = TRUE),
+data = forInla, family = "weibullsurv", verbose = TRUE)
+
+rbind(fitS2$summary.fixed[, c("mean", "0.025quant", "0.975quant")],
+Pmisc::priorPostSd(fitS2)$summary[, c("mean", "0.025quant", "0.975quant")])
+
+qlnorm(0.99,0,0.7)
+xSeq=seq(4,40,len=1000)
+hist(forInla$Age_first_tried_cigt_smkg, main='', 
+     xlim=c(0,40), xlab='age', ylab='hazard density', prob=TRUE)
+kappa=fitS2$summary.hyperpar['alpha','mode']
+lambda=exp(-fitS2$summary.fixed['(Intercept)','mode'])
+lines(xSeq, dweibull((xSeq-4)/10, shape = kappa, scale = lambda)/10, col='red')
+```
+
+```{r,fig.width=2.5, fig.height=4}
+fitS2$priorPost = Pmisc::priorPost(fitS2)
+for (Dparam in fitS2$priorPost$parameters) { 
+  do.call(matplot, fitS2$priorPost[[Dparam]]$matplot)
+  do.call(legend, fitS2$priorPost$legend)
+}
+```
+
+```{r, warning=FALSE, message=FALSE}
+# Report about the Death on the roads 
+pedestrainFile = Pmisc::downloadIfOld("http://pbrown.ca/teaching/appliedstats/data/pedestrians.rds") 
+pedestrians = readRDS(pedestrainFile) 
+pedestrians = pedestrians[!is.na(pedestrians$time), ]
+pedestrians$y = pedestrians$Casualty_Severity == "Fatal" 
+pedestrians$timeCat = format(pedestrians$time, "%Y_%b_%a_h%H") 
+pedestrians$strata = paste(pedestrians$Light_Conditions, pedestrians$Weather_Conditions, pedestrians$timeCat)
+
+theTable = table(pedestrians$strata, pedestrians$y) 
+onlyOne = rownames(theTable)[which(theTable[, 1] == 0 | theTable[, 2] == 0)]
+x = pedestrians[!pedestrians$strata %in% onlyOne, ]
+
+library("survival") 
+theClogit = clogit(y ~ age + age:sex + strata(strata), data = x)
+
+theCoef = rbind(as.data.frame(summary(theClogit)$coef),
+                `age 26 - 35` = c(0, 1, 0, NA, NA)) 
+theCoef$sex = c("Male", "Female")[1 + grepl("Female", rownames(theCoef))]
+theCoef$age = as.numeric(gsub("age|Over| - [[:digit:]].*|[:].*", "", rownames(theCoef))) 
+theCoef = theCoef[order(theCoef$sex, theCoef$age), ]
+
+knitr::kable(theCoef[,c(1,2,3,5)],digits = 3,caption = "Coefficient Table")
+
+matplot(theCoef[theCoef$sex == "Female", "age"],
+        exp(as.matrix(theCoef[theCoef$sex == "Female",
+        c("coef", "se(coef)")]) %*% Pmisc::ciMat(0.99)),
+        log = "y", type = "l", col = "red",
+        lty = c(1, 2, 2), xaxs = "i",
+        xlab="age", ylab="exp(coef)" , main="95% Confidence Interval for female comparing with male")
+abline(h=1, col="black")
+```
